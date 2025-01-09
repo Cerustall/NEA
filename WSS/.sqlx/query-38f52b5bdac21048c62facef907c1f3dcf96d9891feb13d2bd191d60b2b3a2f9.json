@@ -1,0 +1,64 @@
+{
+  "db_name": "MySQL",
+  "query": "SELECT * FROM clients",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "UUID",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 120
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "Username",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 120
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "Password",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 120
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "Email",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 120
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "LastIP",
+        "type_info": {
+          "type": "VarString",
+          "flags": "",
+          "max_size": 120
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "38f52b5bdac21048c62facef907c1f3dcf96d9891feb13d2bd191d60b2b3a2f9"
+}

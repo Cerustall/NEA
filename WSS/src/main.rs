@@ -1,195 +1,146 @@
-// Help largely comes from:
-// https://blog.logrocket.com/build-websocket-server-with-rust/
+use sqlx::{Pool, pool::PoolOptions, mysql::{MySql, MySqlPool}};
+use tokio::runtime::Runtime;
+use chrono::prelude::*;
+use chrono::{Datelike, Timelike, Utc, DateTime};
+use serde::{Deserialize, Serialize};
+use pretty_env_logger;
+use warp::Filter;
 
-/*
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::State;
-use axum::response::Response;
-use axum::routing::get;
-use axum::Router;
-use futures::*;
-use std::collections::HashMap;
-use std::convert::Infallible;
-use std::sync::Arc;
-use serde_derive::{Deserialize, Serialize};
-use serde_json::*;
-use tokio::net::TcpListener;
-use tokio::sync::mpsc::{self, UnboundedSender};
-use tokio::sync::Mutex;
-use tower_http::services::ServeDir;
-use tracing::info;
-use tracing_subscriber::filter::LevelFilter;
-use uuid::*;
-use warp::ws::Message;
-use warp::*;
-use crate::hyper::StatusCode;
-use crate::StatusCode;
-use crate::ws:Message;
-*/
-
-use std::collections::HashMap;
-use std::convert::Infallible;
-use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
-use warp::{ws::Message, Filter, Rejection};
-pub use serde_derive::{Deserialize, Serialize};
-
-/* Part of previous code
-#[derive(Clone)]
-struct AppState {
-    connections: Arc<Mutex<HashMap<String, UnboundedSender<String>>>>,
-}
-*/
-
-// Defines standard result type
-type Result<T> = std::result::Result<T, Rejection>;
-
-// Package that contains connected clients (to be initialised)
-// Hashmap maps clients UUID to their username
-// Mutex ensures only one accessor at a time, to prevent overwrite errors 
-// Arc allows type to be passed between threads safely
-type Clients = Arc<Mutex<HashMap<String, Client>>>;
-
-// THe client
-#[derive (Clone)]
-pub struct Client {
-    pub user_id: usize,
-    pub topics: Vec<String>,
-    pub sender: Option<mpsc::UnboundedSender<std::result::Result<Message, warp::Error>>>,
+#[derive(Serialize, Deserialize, Debug)]
+struct Client{
+    UUID: Option<String>,
+    Username: Option<String>,
+    Password: Option<String>,
+    Email: Option<String>,
+    LastIP: Option<String>,
 }
 
-// EXPLAIN THIS STRUCT
-#[derive(serde::Deserialize, serde::Serialize)]
-pub struct RegisterRequest {
-    user_id: usize,
+#[derive(Serialize, Deserialize, Debug)]
+struct Message{
+    MessageID: Option<String>,
+    SenderID: Option<String>,
+    ChannelID: Option<String>,
+    Content: Option<String>,
+    DateTimeSent: Option<String>, //Call NaiveDateTime to string func to initialise
 }
 
-// EXPLAIN THIS STRUCT
-#[derive(serde::Deserialize, serde::Serialize)]
-pub struct RegisterResponse {
-    url: String,
+#[derive(Serialize, Deserialize, Debug)]
+struct Chat{
+    ChatID: Option<String>,
+    ChatName: Option<String>,
+    OwnerID: Option<String>,
+    DateTimeCreated: Option<String>,
 }
 
-// Event e.g message, broadcast
-#[derive(serde::Deserialize, serde::Serialize)]
-pub struct Event {
-    topic: String,
-    user_id: Option<usize>,
-    message: String,
+#[derive(Serialize, Deserialize, Debug)]
+struct UserChatConnection{
+    userChatConnectionID: Option<String>,
+    UserID: Option<String>,
+    ChannelID: Option<String>,
+    DateTimeUserAdded: Option<String>,
 }
 
-// EXPLAIN THIS STRUCT
-#[derive(serde::Deserialize, serde::Serialize)]
-pub struct TopicsRequest {
-    topics: Vec<String>,
-}
-
-mod handler;
-//mod ws;
-
-
-// Main
 #[tokio::main]
-async fn main() {
-    // Initialise client container
-    let clients: Clients = Arc::new(Mutex::new(HashMap::new()));
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
-    // Initialise routes
-
-    // Inidicates service up
-    let health_route = warp::path!("health").and_then(handler::health_handler);
-
-    // Registers/deregisters clients
-    let register = warp::path("register");
-    //Register
-    let register_routes = register
-        .and(warp::post())
-        .and(warp::body::json())
-        .and(with_clients(clients.clone()))
-        .and_then(handler::register_handler) // Following section is deregister
-        .or(register
-            .and(warp::delete())
-            .and(warp::path::param())
-            .and(with_clients(clients.clone()))
-            .and_then(handler::unregister_handler));
+    let pool = database_connect().await?;
     
-    // Broadcast events
-    let publish = warp::path!("publish")
-        .and(warp::body::json())
-        .and(with_clients(clients.clone()))
-        .and_then(handler::publish_handler);
+    pretty_env_logger::init();
 
-    // WS endpoint
-    let ws_route = warp::path("ws")
-        .and(warp::ws())
-        .and(warp::path::param())
-        .and(with_clients(clients.clone()))
-        .and_then(handler::ws_handler);
+    let test = warp::get()
+        .and(warp::path::end())
+        .and(warp::fs::file("./web/index.html"))
+    ;
 
-    // Defins all routes
-    let routes = health_route
-        .or(register_routes)
-        .or(ws_route)
-        .or(publish)
-        .with(warp::cors().allow_any_origin());
+    let route = test;
+
+    warp::serve(route).run(([127, 0, 0, 1], 8080)).await;
+
+    /*
+    let clients = get_clients(&pool).await?;
+    println!("{:#?}", clients); 
+    */
+
+    Ok(())
+
+    /*
+    let rt = Runtime::new()?;
+        rt.block_on( async {
+        let database_url = "mysql://edward:1152@localhost:3306/messenger";
     
-    // Serves above routes on given IPv4 and port (Currently loopback for debug and testing)
-    warp::serve(routes).run(([127, 0, 0, 1], 3000)).await;
+        let pool: Pool<sqlx::mysql::MySql> = MySqlPool::connect(database_url).await?;
+
+        println!("Connected to database successfully");
+        
+        let test = Client{
+            UUID: Some(String::from("1")),
+            Username: Some(String::from("Cerustall")),
+            Password: Some(String::from("password")),
+            Email: Some(String::from("edward.bailey.100@outlook.com")),
+            LastIP: Some(String::from("0.0.0.0")),
+        };
+        
+        insert_client(&pool, &test).await;
+
+        
+
+        Ok(())
+    })
+    */
 }
 
-// Inserts clients into their container? I think?
-fn with_clients(clients: Clients) -> impl Filter<Extract = (Clients,), Error = Infallible> + Clone {
-  warp::any().map(move || clients.clone())
+async fn database_connect() -> Result<MySqlPool, sqlx::Error>{
+    return MySqlPool::connect("mysql://edward:1152@localhost:3306/messenger").await;
 }
 
-
-
-/* Previous program
-#[tokio::main]
-async fn main() {
-    tracing_subscriber::fmt()
-        .with_max_level(LevelFilter::DEBUG)
-        .init();
-
-    let state = AppState {
-        connections: Arc::new(Mutex::new(HashMap::new())),
-    };
-    let app = Router::new()
-        .route("/ws", get(ws_handler))
-        .nest_service("/", ServeDir::new("web"))
-        .with_state(state);
-    let listener = TcpListener::bind("127.0.0.1:3000").await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+async fn naive_date_time_to_string(dt: NaiveDateTime) -> String{
+    // Get current UTC date and time.
+    let date: DateTime<Utc> = Utc::now();
+    // Format current UTC date and time into string
+    let formatted_date = date.format("%Y/%m/%d %H:%M:%S").to_string();
+    formatted_date
 }
 
-async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {
-    ws.on_upgrade(|ws| handle_socket(ws, state))
+async fn get_clients(pool: &MySqlPool) -> Result<Vec<Client>, sqlx::Error> {
+    let clients = sqlx::query_as!(
+        Client,
+        r#"SELECT * FROM clients"#
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(clients)
 }
 
-async fn handle_socket(mut socket: WebSocket, state: AppState) {
-    let username = socket.recv().await.unwrap().unwrap().into_text().unwrap();
-    let (tx, mut rx) = mpsc::unbounded_channel();
-    {
-        info!("new connection {}", username);
+async fn insert_client(pool: &MySqlPool, client: &Client) -> bool {
+    println!("Insert fn reached");
+    let result = sqlx::query(
+        "INSERT INTO clients (
+            UUID, 
+            Username, 
+            Password, 
+            Email, 
+            LastIP) 
+        values (?, ?, ?, ?, ?)"
+    ).bind(&client.UUID)
+    .bind(&client.Username)
+    .bind(&client.Password)
+    .bind(&client.Email)
+    .bind(&client.LastIP)
+    .execute(pool).await;
 
-        let mut connections = state.connections.lock().await;
-        connections.insert(username.clone(), tx);
-    }
-    loop {
-        tokio::select! {
-            msg = socket.recv() => {
-                let text = format!("{}: {}", username, msg.unwrap().unwrap().into_text().unwrap());
-                info!("{:?}", text);
-                let connections = state.connections.lock().await;
-                for tx in connections.values() {
-                    tx.send(text.clone()).unwrap();
-                }
-            },
-            msg = rx.recv() => {
-                info!("received mpsc message {:?}", msg);
-                socket.send(Message::Text(msg.unwrap())).await.unwrap();
-            }
+    match result {
+        Err(e) => {
+            println!("Error inserting client: {:#?}", client);
+            println!("Error message: [{}].\n", e.to_string());
+            return false;
+        }
+
+        Ok(res) => {
+            println!("Client has been inserted.");
+            println!("Number of clients inserted: {}", res.rows_affected());
         }
     }
+
+    true
 }
-*/
